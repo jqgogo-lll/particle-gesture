@@ -203,7 +203,7 @@ async function initHands() {
     await videoEl.play();
 
     const vision = await FilesetResolver.forVisionTasks(
-      'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
+      '/wasm'
     );
     handLandmarker = await HandLandmarker.createFromOptions(vision, {
       baseOptions: {
@@ -283,8 +283,8 @@ function animate(ts) {
   // Speed from movement velocity
   const fd = ha ? Math.abs(hand.extended - hand.prevExtended) : 0;
   const rd = ha ? Math.abs(hand.rollDelta) : 0;
-  const expandSpd = Math.min(0.015 + fd * 0.06, 0.2);
-  const rotSpd = Math.min(0.06 + (fd + rd * 2) * 0.12, 0.3);
+  const expandSpd = Math.min(0.05 + fd * 0.08, 0.22);
+  const rotSpd = Math.min(0.12 + (fd + rd * 2) * 0.15, 0.35);
 
   // Radius
   const tr = g === 'fist' ? COMPACT_R : g === 'pinch' ? 1.8 : SCATTER_R;
@@ -307,8 +307,8 @@ function animate(ts) {
   const cr = curR;
   const cosA = Math.cos(curAngle);
   const sinA = Math.sin(curAngle);
-  const stiffness = 20;
-  const damping = 9;
+  const stiffness = 35;
+  const damping = 12;
 
   for (let i = 0; i < COUNT; i++) {
     const i3 = i * 3;
