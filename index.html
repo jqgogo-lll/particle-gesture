@@ -13,12 +13,17 @@
     #start-btn:hover { background: rgba(30,60,120,0.8); border-color: rgba(150,220,255,0.9); box-shadow: 0 0 30px rgba(100,180,255,0.4); }
     #start-btn:active { transform: translate(-50%, -50%) scale(0.95); }
     #start-btn.hidden { opacity: 0; pointer-events: none; }
+    #cam-btn { position: fixed; top: 16px; right: 16px; padding: 10px 16px; font-size: 13px; border: 1px solid rgba(100,200,255,0.4); border-radius: 20px; background: rgba(0,0,0,0.6); color: rgba(180,220,255,0.8); cursor: pointer; z-index: 100; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); transition: all 0.3s; opacity: 0; pointer-events: none; }
+    #cam-btn.show { opacity: 1; pointer-events: auto; }
+    #cam-btn:hover { background: rgba(30,60,120,0.7); border-color: rgba(150,220,255,0.7); }
+    #cam-btn.on { border-color: rgba(0,255,150,0.7); color: rgba(0,255,150,0.9); }
   </style>
 </head>
 <body>
   <div id="status">加载中...</div>
   <div id="gesture-label"></div>
   <button id="start-btn">✨ 点击启动</button>
+  <button id="cam-btn">📷 手势追踪</button>
 
   <script type="importmap">
     {
@@ -170,7 +175,7 @@
     const points = new THREE.Points(geo, mat);
     scene.add(points);
 
-    setStatus('🖐 点击启动手势追踪', 'rgba(120,200,255,0.9)');
+    setStatus('🖐 触摸屏幕=聚拢 | 松开=散开', 'rgba(120,200,255,0.9)');
 
     // ── State ────────────────────────────────────
     const hand = { active: false, gesture: 'open', roll: 0, prevRoll: 0, rollDelta: 0, extended: 5, prevExtended: 5 };
@@ -183,8 +188,8 @@
     document.addEventListener('mouseleave', () => { mouse.active = false; });
     document.addEventListener('mousedown', () => { mouse.gesture = 'fist'; });
     document.addEventListener('mouseup', () => { mouse.gesture = 'open'; });
-    document.addEventListener('touchstart', () => { mouse.active = true; }, { passive: true });
-    document.addEventListener('touchend', () => { mouse.active = false; });
+    document.addEventListener('touchstart', () => { mouse.active = true; mouse.gesture = 'fist'; }, { passive: true });
+    document.addEventListener('touchend', () => { mouse.active = false; mouse.gesture = 'open'; });
     document.addEventListener('touchmove', () => { mouse.active = true; }, { passive: true });
 
     // ── Hand Tracking ────────────────────────────
@@ -235,43 +240,6 @@
       hand.active = true;
     }
 
-    async function initHands() {
-      // Step 1: Camera
-      setStatus('📷 请求摄像头权限...', 'rgba(120,200,255,0.9)');
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: 640, height: 480, facingMode: 'user' },
-        audio: false,
-      });
-      videoEl.srcObject = stream;
-      await videoEl.play();
-
-      // Step 2: Load MediaPipe WASM
-      setStatus('⬇️ 加载 AI 模型...', 'rgba(120,200,255,0.9)');
-
-      const { HandLandmarker, FilesetResolver } = await import(
-        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs'
-      );
-
-      const vision = await FilesetResolver.forVisionTasks(
-        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
-      );
-
-      setStatus('⬇️ 下载手势识别模型...', 'rgba(120,200,255,0.9)');
-
-      handLandmarker = await HandLandmarker.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-        },
-        runningMode: 'VIDEO',
-        numHands: 1,
-        minHandDetectionConfidence: 0.5,
-        minTrackingConfidence: 0.5,
-      });
-
-      setStatus('🖐 张开=散开旋转 | ✊ 握拳=聚拢', 'rgba(120,200,255,0.9)');
-      setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
-    }
-
     // ── Animation ────────────────────────────────
     const labels = { open: '🖐 散开', fist: '✊ 聚拢', pinch: '🤏' };
     let lastG = '';
@@ -285,8 +253,8 @@
 
       const fd = ha ? Math.abs(hand.extended - hand.prevExtended) : 0;
       const rd = ha ? Math.abs(hand.rollDelta) : 0;
-      const expandSpd = Math.min(0.015 + fd * 0.06, 0.2);
-      const rotSpd = Math.min(0.06 + (fd + rd * 2) * 0.12, 0.3);
+      const expandSpd = Math.min(0.18 + fd * 0.1, 0.35);
+      const rotSpd = Math.min(0.22 + (fd + rd * 2) * 0.18, 0.45);
 
       const tr = g === 'fist' ? COMPACT_R : g === 'pinch' ? 1.8 : SCATTER_R;
       curR += (tr - curR) * expandSpd;
@@ -305,8 +273,8 @@
       const cr = curR;
       const cosA = Math.cos(curAngle);
       const sinA = Math.sin(curAngle);
-      const stiffness = 20;
-      const damping = 9;
+      const stiffness = 70;
+      const damping = 22;
 
       for (let i = 0; i < COUNT; i++) {
         const i3 = i * 3;
@@ -340,38 +308,77 @@
 
     // ── Start ────────────────────────────────────
     let started = false;
+    const camBtn = document.getElementById('cam-btn');
 
     function trackLoop() {
       detectHands();
       requestAnimationFrame(trackLoop);
     }
 
-    async function onStart() {
+    function onStart() {
       if (started) return;
       started = true;
       startBtn.classList.add('hidden');
+      setStatus('👆 触摸屏幕=聚拢 | 松开=散开', 'rgba(120,200,255,0.9)');
+      setTimeout(() => { statusEl.style.opacity = '0'; }, 2500);
+      camBtn.classList.add('show');
+      setTimeout(() => startBtn.remove(), 500);
+    }
 
+    async function enableCamera() {
+      if (handLandmarker) return;
+      camBtn.textContent = '⬇️ 加载中...';
+      camBtn.style.pointerEvents = 'none';
       try {
-        await initHands();
+        setStatus('📷 请求摄像头...', 'rgba(120,200,255,0.9)');
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: 640, height: 480, facingMode: 'user' },
+          audio: false,
+        });
+        videoEl.srcObject = stream;
+        await videoEl.play();
+
+        setStatus('⬇️ 加载 AI 模型...', 'rgba(120,200,255,0.9)');
+        const { HandLandmarker, FilesetResolver } = await import(
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs'
+        );
+        const vision = await FilesetResolver.forVisionTasks(
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm'
+        );
+        handLandmarker = await HandLandmarker.createFromOptions(vision, {
+          baseOptions: {
+            modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+          },
+          runningMode: 'VIDEO',
+          numHands: 1,
+          minHandDetectionConfidence: 0.5,
+          minTrackingConfidence: 0.5,
+        });
+
         trackLoop();
-        setTimeout(() => startBtn.remove(), 500);
+        camBtn.textContent = '✅ 手势已激活';
+        camBtn.classList.add('on');
+        setStatus('🖐 张开=散开 | ✊ 握拳=聚拢', 'rgba(120,200,255,0.9)');
+        setTimeout(() => { statusEl.style.opacity = '0'; }, 3000);
       } catch (err) {
         console.error('Camera init error:', err);
-        const msg = err.message || err.toString();
-        if (msg.includes('NotAllowed') || msg.includes(' Permission')) {
-          setStatus('📷 摄像头权限被拒绝 — 鼠标模式（按住鼠标=聚拢）', 'rgba(255,200,100,0.9)');
-        } else if (msg.includes('NotReadable') || msg.includes('occupied')) {
-          setStatus('📷 摄像头被占用 — 鼠标模式（按住鼠标=聚拢）', 'rgba(255,200,100,0.9)');
+        camBtn.textContent = '📷 手势追踪';
+        camBtn.style.pointerEvents = 'auto';
+        const msg = (err.message || err.toString()).toLowerCase();
+        if (msg.includes('notallowed') || msg.includes('permission')) {
+          setStatus('📷 摄像头权限被拒绝', 'rgba(255,200,100,0.9)');
+        } else if (msg.includes('notreadable') || msg.includes('occupied')) {
+          setStatus('📷 摄像头被占用', 'rgba(255,200,100,0.9)');
         } else {
-          setStatus('🌐 网络加载失败 — 鼠标模式（按住鼠标=聚拢）', 'rgba(255,200,100,0.9)');
+          setStatus('🌐 网络加载失败，请重试', 'rgba(255,200,100,0.9)');
         }
         setTimeout(() => { statusEl.style.opacity = '0'; }, 4000);
-        setTimeout(() => startBtn.remove(), 500);
       }
     }
 
     startBtn.addEventListener('click', onStart);
     startBtn.addEventListener('touchend', (e) => { e.preventDefault(); onStart(); });
+    camBtn.addEventListener('click', enableCamera);
 
     // Kick off animation immediately — particles visible without camera
     requestAnimationFrame(animate);
